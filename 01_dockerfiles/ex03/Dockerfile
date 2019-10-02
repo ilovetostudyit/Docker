@@ -2,21 +2,33 @@ FROM ubuntu:16.04
 
 MAINTAINER ehaggon <ehaggon@student.21-school.ru>
 
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y ca-certificates openssh-server wget postfix
+EXPOSE 80 22
 
-RUN wget https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.deb.sh && chmod 777 script.deb.sh && ./script.deb.sh && apt-get install -y gitlab-ce
+RUN apt-get update -y && \
+	apt-get upgrade -y
 
-RUN apt update && apt install -y tzdata && \
-  apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+RUN apt-get install -y	sudo \
+						openssh-client \
+						curl \
+						openssh-server \
+						ca-certificates \
+						tzdata
+RUN sudo initctl restart gitlab-runsvdir
+RUN mkdir -p /opt/gitlab/sv/sshd/supervise \
+		&& mkfifo /opt/gitlab/sv/sshd/supervise/ok \
+		&& printf "#!/bin/sh\nexec 2>&1\numask 077\nexec /usr/sbin/sshd -D" > /opt/gitlab/sv/sshd/run \
+		&& chmod a+x /opt/gitlab/sv/sshd/run \
+		&& ln -s /opt/gitlab/sv/sshd /opt/gitlab/service \
+		&& mkdir -p /var/run/sshd
 
-EXPOSE 443 80 22
+RUN curl https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.deb.sh | sudo bash
 
-ENTRYPOINT (/opt/gitlab/embedded/bin/runsvdir-start &) && gitlab-ctl reconfigure && tail -f /dev/null
+RUN apt install -y gitlab-ce
 
-# How to build it?
-# docker build -t ex03 .
+RUN echo "external_url \"http://localhost/\"" > /etc/gitlab/gitlab.rb
 
-# How to run it?
-# docker run -it --rm -p 8080:80 -p 8022:22 -p 8443:443 --privileged ex03
+ADD start.sh /root/start.sh
+
+RUN chmod +x /root/start.sh
+
+ENTRYPOINT	/root/start.sh
